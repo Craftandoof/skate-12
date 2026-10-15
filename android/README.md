@@ -7,7 +7,7 @@ included in this repository.
 
 ## Device requirements
 
-- Android 13 or newer (API 33+)
+- Android 12 or newer (API 31+) in this fork (upstream: Android 13)
 - `arm64-v8a`
 - ARMv8.2 CPU with FP16 and dot-product extensions
 - Vulkan support
@@ -15,7 +15,7 @@ included in this repository.
 
 The Anbernic RG406V (Unisoc T820 / Mali-G57) is verified. Other recent gaming
 handhelds and sufficiently fast phones may work, but the build is not currently
-universal: 32-bit devices, older ARM64 CPUs, Android 12 and older, and devices
+universal: 32-bit devices, older ARM64 CPUs, Android 11 and older, and devices
 without the required Vulkan features are unsupported.
 
 This branch also contains the Seiyu Paradise Penguin Mod character replacement

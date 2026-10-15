@@ -1,6 +1,8 @@
 #include "skate3_android_defaults.h"
 #if defined(__ANDROID__)
 #include <sys/sysinfo.h>
+#include <sys/system_properties.h>
+#include <cctype>
 #include <cstdio>
 #include <fstream>
 #include <map>
@@ -27,6 +29,60 @@ uint64_t AndroidTotalRamMb() {
 // were.
 bool AndroidIsLowEnd() { return AndroidTotalRamMb() != 0 && AndroidTotalRamMb() < 4000; }
 
+std::string AndroidProp(const char* key) {
+  char value[PROP_VALUE_MAX] = {};
+  __system_property_get(key, value);
+  return value;
+}
+
+std::string AndroidLower(std::string text) {
+  for (char& c : text) {
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
+  return text;
+}
+
+// The Mali-G52 class. MediaTek Helio G70, G80 and G85 (MT6768 / MT6769) pair a
+// two-core Mali-G52 with only two fast CPU cores (2x Cortex-A75 plus 6x
+// Cortex-A55), for example the Redmi 9. That is well below the RG406V (Mali-G57
+// MC4 and four Cortex-A76 cores) the Performance profile was tuned on, so these
+// devices get a more conservative set of defaults.
+//
+// RAM cannot identify them: a 6 GB Redmi 9 reports as a "standard" device and
+// would otherwise default to the 720p High-End profile.
+//
+// `adb shell setprop debug.skate3.weak_gpu 1` forces the class on, for other
+// Mali-G52 phones, and `0` forces it off.
+bool DetectWeakMaliDevice() {
+  bool weak = false;
+  const char* reason = "no SoC match";
+  const std::string forced = AndroidProp("debug.skate3.weak_gpu");
+  if (forced == "1" || forced == "0") {
+    weak = forced == "1";
+    reason = "debug.skate3.weak_gpu override";
+  } else {
+    for (const char* key :
+         {"ro.board.platform", "ro.hardware", "ro.soc.model", "ro.product.board"}) {
+      const std::string value = AndroidLower(AndroidProp(key));
+      if (value.find("mt6768") != std::string::npos ||
+          value.find("mt6769") != std::string::npos) {
+        weak = true;
+        reason = key;
+        break;
+      }
+    }
+  }
+  std::fprintf(stderr, "device class: weak Mali (G52, two fast cores) = %s (%s)\n",
+               weak ? "yes" : "no", reason);
+  std::fflush(stderr);
+  return weak;
+}
+
+bool AndroidIsWeakMali() {
+  static const bool weak = DetectWeakMaliDevice();
+  return weak;
+}
+
 // Which cores are the fast ones.
 //
 // "Eight cores" on a budget phone is rarely eight of the same thing: the Tab
@@ -38,7 +94,7 @@ bool AndroidIsLowEnd() { return AndroidTotalRamMb() != 0 && AndroidTotalRamMb() 
 //
 // Returns an empty string when every core has the same ceiling, which is the
 // signal not to set any affinity at all.
-std::string AndroidCoreList(bool fast) {
+std::vector<int> AndroidCoresByClass(bool fast) {
   std::map<uint64_t, std::vector<int>> by_ceiling;
   for (int cpu = 0; cpu < 64; ++cpu) {
     std::ifstream f("/sys/devices/system/cpu/cpu" + std::to_string(cpu) +
@@ -68,6 +124,10 @@ std::string AndroidCoreList(bool fast) {
       cores.insert(cores.end(), it->second.begin(), it->second.end());
     }
   }
+  return cores;
+}
+
+std::string JoinCores(const std::vector<int>& cores) {
   std::string out;
   for (const int c : cores) {
     if (!out.empty()) {
@@ -78,6 +138,8 @@ std::string AndroidCoreList(bool fast) {
   return out;
 }
 
+std::string AndroidCoreList(bool fast) { return JoinCores(AndroidCoresByClass(fast)); }
+
 // Keep the threads a frame waits on off the slow cores, and push the ones that
 // only have to keep up onto them. Names must match what the threads call
 // themselves, and only the first 15 characters survive (the thread layer
@@ -86,7 +148,7 @@ std::string AndroidCoreList(bool fast) {
 // Only positive nice appears: an unprivileged app is refused a negative one,
 // so lowering a background thread is the half of the lever that actually
 // works.
-std::string AndroidThreadPlacement() {
+std::string AndroidThreadPlacement(bool weak_mali) {
   const std::string fast = AndroidCoreList(true);
   const std::string slow = AndroidCoreList(false);
   if (fast.empty() || slow.empty()) {
@@ -94,6 +156,21 @@ std::string AndroidThreadPlacement() {
   }
   const std::string f = "cpu:" + fast;
   const std::string s = "cpu:" + slow;
+  if (weak_mali) {
+    // Two fast cores cannot hold the six hot threads the map below pins to
+    // them, so the frame would queue behind itself. Give each of the two frame
+    // producers a fast core of its own, keep streaming off them as before, and
+    // leave the remaining threads (render, kernel dispatch, audio) unpinned so
+    // the scheduler can place them by load. Only applied when the SoC really
+    // has two fast cores; anything else keeps the original map.
+    const std::vector<int> fast_cores = AndroidCoresByClass(true);
+    if (fast_cores.size() == 2) {
+      return "Main XThread=cpu:" + std::to_string(fast_cores.back()) +
+             ";GPU Commands=cpu:" + std::to_string(fast_cores.front()) +
+             ";XMA Decoder=" + s + ",nice:5;rwfilesys=" + s + ",nice:5;load_thread=" + s +
+             ",nice:5;presence_thread=" + s + ",nice:10";
+    }
+  }
   return
       // The frame depends on these finishing.
       "Main XThread=" + f + ";GPU Commands=" + f + ";render_thread=" + f +
@@ -177,7 +254,8 @@ void ApplySkate3AndroidDefaults() {
       REXLOG_ERROR("Android default could not be applied: {}={}", name, value);
     }
   }
-  if (AndroidIsLowEnd()) {
+  const bool weak_mali = AndroidIsWeakMali();
+  if (AndroidIsLowEnd() || weak_mali) {
     rex::cvar::SetFlagByName("skate3_native_render_scene_tex_base_mip_px", "256");
     rex::cvar::SetFlagByName("skate3_native_render_scene_tex_base_mip2_px", "1024");
     rex::cvar::SetFlagByName("skate3_native_render_guest_static_refresh", "2");
@@ -186,7 +264,40 @@ void ApplySkate3AndroidDefaults() {
   const auto budgets = PickAndroidStoreBudgets();
   rex::cvar::SetFlagByName("skate3_native_render_scene_tex_store_mb", std::to_string(budgets.tex_mb));
   rex::cvar::SetFlagByName("skate3_native_render_scene_mesh_store_mb", std::to_string(budgets.mesh_mb));
-  rex::cvar::SetFlagByName("android_thread_placement_map", AndroidThreadPlacement());
-  rex::cvar::SetFlagByName("skate3_android_quality_profile", AndroidIsLowEnd() ? "0" : "1");
+  rex::cvar::SetFlagByName("android_thread_placement_map", AndroidThreadPlacement(weak_mali));
+  rex::cvar::SetFlagByName("skate3_android_quality_profile",
+                           (AndroidIsLowEnd() || weak_mali) ? "0" : "1");
+  if (weak_mali) {
+    // Redmi 9 / Mali-G52 / Android 12 class (docs/REDMI9_ANDROID12.md). Saved
+    // settings still load after this, so the in-game menu stays authoritative.
+    //
+    // 30 FPS: a steady 30 beats an uneven 40-50 on two fast cores, and the
+    // guest frame pacing only evens out frames it is allowed to wait on.
+    rex::cvar::SetFlagByName("skate3_guest_fps_cap", "30");
+    // 1024-frame audio buffer: the 512-frame default underruns when the two
+    // fast cores are saturated, and a crackle costs more than 10 ms of latency.
+    rex::cvar::SetFlagByName("audio_device_sample_frames", "1024");
+    std::fprintf(stderr,
+                 "weak Mali defaults: Performance profile, 30 FPS cap, 1024-frame audio buffer, "
+                 "reduced base mips\n");
+    std::fflush(stderr);
+  }
+#endif
+}
+
+bool Skate3AndroidIsWeakMaliDevice() {
+#if defined(__ANDROID__)
+  return AndroidIsWeakMali();
+#else
+  return false;
+#endif
+}
+
+bool Skate3AndroidDebugFlag(const char* name) {
+#if defined(__ANDROID__)
+  return AndroidProp((std::string("debug.skate3.") + name).c_str()) == "1";
+#else
+  (void)name;
+  return false;
 #endif
 }

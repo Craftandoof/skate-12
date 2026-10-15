@@ -24,7 +24,9 @@ android {
     }
     defaultConfig {
         applicationId "chat.buku.skate3"
-        minSdkVersion 33
+        // Android 12 (API 31) is the floor so older phones such as the Redmi 9
+        // can install the app. Android 13+ behavior is unchanged.
+        minSdkVersion 31
         targetSdkVersion 35
         versionCode 20100
         versionName "2.1.0"

@@ -36,7 +36,7 @@ You do not need a computer, developer tools, or an ISO extraction app.
 4. Keep the app open while it extracts and verifies the game.
 5. Tap **Play Skate 3**.
 
-Requirements: Android 13 or newer, ARM64, Vulkan, and about 8 GiB free after
+Requirements: Android 12 or newer, ARM64, Vulkan, and about 8 GiB free after
 the ISO is already available. A multitouch controller is built in for phones.
 Physical and built-in gamepads remain supported. The first verified device is
 the Anbernic RG406V. This is experimental software, so other phones may need
@@ -126,15 +126,23 @@ problems, and performance differences between phones.
 
 ## Device requirements
 
-- Android 13 or newer
+- Android 12 or newer (this fork; upstream requires Android 13)
 - ARM64
-- ARMv8.2 with FP16 and dot-product support
+- ARMv8.2 with FP16 and dot-product support (not enforced by the build)
 - Vulkan support
 - Touchscreen, physical controller, or built-in gamepad
 
 The RG406V with the Unisoc T820 and Mali-G57 is the first verified device.
 Newer Snapdragon and Adreno devices are good candidates, but they have not all
 been tested.
+
+## Redmi 9 / Android 12 fork
+
+This fork adds Android 12 support and an automatic Mali-G52 profile for phones
+such as the Redmi 9 (Helio G80). See
+[docs/REDMI9_ANDROID12.md](docs/REDMI9_ANDROID12.md) for the feasibility
+analysis, build and install guide, limitations and a test-report template. It
+has not yet been tested on a physical Redmi 9.
 
 ## Graphics profiles
 

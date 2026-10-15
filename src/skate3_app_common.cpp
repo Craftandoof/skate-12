@@ -655,9 +655,23 @@ void Skate3BaseApp::OnConfigurePaths(rex::PathConfig& paths) {
     REXLOG_INFO(
         "Android device profile: RG406V / Performance (512x288, 0.5x "
         "world/LOD, simplified materials)");
+    if (Skate3AndroidIsWeakMaliDevice()) {
+      // Same scene settings as above plus the weak-Mali defaults applied in
+      // ApplySkate3AndroidDefaults (30 FPS cap, 1024-frame audio, two-core
+      // thread placement). See docs/REDMI9_ANDROID12.md.
+      REXLOG_INFO("Android device profile: Redmi 9 / Mali-G52 / Android 12 (Performance base)");
+    }
   } else {
     rex::cvar::SetFlagByName("skate3_native_render_scene_handheld_potato", "false");
     REXLOG_INFO("Android device profile: High-End / Quality (1280x720, regular materials, saved settings)");
+  }
+  // Opt-in measurement hook for device testing, no rebuild needed:
+  //   adb shell setprop debug.skate3.perf_log 1
+  // The Performance preset forces perf logging off, so it is re-enabled here.
+  if (Skate3AndroidDebugFlag("perf_log")) {
+    rex::cvar::SetFlagByName("skate3_native_render_scene_perf_log", "true");
+    rex::cvar::SetFlagByName("skate3_native_render_scene_perf_interval", "300");
+    REXLOG_INFO("debug.skate3.perf_log=1: frame statistics every 300 frames");
   }
 #endif
   Skate3InitializeFieldOfViewOverride();

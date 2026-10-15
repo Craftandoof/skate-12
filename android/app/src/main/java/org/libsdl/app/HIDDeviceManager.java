@@ -195,12 +195,25 @@ public class HIDDeviceManager {
         filter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
         filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
         filter.addAction(HIDDeviceManager.ACTION_USB_PERMISSION);
-        // This app targets Android 13 and newer, where receiver export state is
-        // mandatory. The system USB service must be able to deliver the grant.
-        mContext.registerReceiver(mUsbBroadcast, filter, Context.RECEIVER_EXPORTED);
+        // On Android 13+ the receiver export state is mandatory. The system USB
+        // service must be able to deliver the grant.
+        registerReceiverExported(mContext, mUsbBroadcast, filter);
 
         for (UsbDevice usbDevice : mUsbManager.getDeviceList().values()) {
             handleUsbDeviceAttached(usbDevice);
+        }
+    }
+
+    // Context.registerReceiver(receiver, filter, int flags) only exists on API 33
+    // and newer. Calling it on Android 12 throws NoSuchMethodError while the game
+    // activity is starting, so older releases use the two-argument form, which
+    // registers an exported receiver by default.
+    private static void registerReceiverExported(Context context, BroadcastReceiver receiver,
+                                                 IntentFilter filter) {
+        if (Build.VERSION.SDK_INT >= 33 /* Android 13 (TIRAMISU) */) {
+            context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED);
+        } else {
+            context.registerReceiver(receiver, filter);
         }
     }
 
@@ -413,7 +426,7 @@ public class HIDDeviceManager {
         IntentFilter filter = new IntentFilter();
         filter.addAction(BluetoothDevice.ACTION_ACL_CONNECTED);
         filter.addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED);
-        mContext.registerReceiver(mBluetoothBroadcast, filter, Context.RECEIVER_EXPORTED);
+        registerReceiverExported(mContext, mBluetoothBroadcast, filter);
 
         if (mIsChromebook) {
             mHandler = new Handler(Looper.getMainLooper());

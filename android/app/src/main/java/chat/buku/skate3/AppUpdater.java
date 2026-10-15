@@ -54,6 +54,9 @@ final class AppUpdater {
         String packageName = context.getPackageName();
         String manifestUrl = UpdatePolicy.manifestUrl(packageName);
         if (manifestUrl == null) return null;
+        // The public update channels ship builds that require Android 13. Never
+        // offer them to Android 12 devices, where they could not be installed.
+        if (android.os.Build.VERSION.SDK_INT < 33) return null;
         JSONObject json = new JSONObject(new String(
             downloadBytes(manifestUrl, 256 * 1024), StandardCharsets.UTF_8));
         UpdateInfo info = new UpdateInfo(

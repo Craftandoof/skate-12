@@ -209,7 +209,7 @@ public class LauncherActivity extends Activity {
         content.addView(gpuDriverButton, matchFixed(dp(46), dp(18)));
 
         TextView requirements = text(
-            "Requires Android 13+, ARM64, Vulkan, and about 8 GB free after the ISO is already on your device or USB drive. Touch controls are included.",
+            "Requires Android 12+, ARM64, Vulkan, and about 8 GB free after the ISO is already on your device or USB drive. Touch controls are included.",
             12, Color.rgb(125, 125, 132));
         requirements.setGravity(Gravity.CENTER);
         requirements.setLineSpacing(0, 1.1f);
@@ -1283,8 +1283,8 @@ public class LauncherActivity extends Activity {
         if (!arm64) {
             return "This build requires a 64-bit ARM Android device.";
         }
-        if (Build.VERSION.SDK_INT < 33) {
-            return "This build requires Android 13 or newer.";
+        if (Build.VERSION.SDK_INT < 31) {
+            return "This build requires Android 12 or newer.";
         }
         if (!getPackageManager().hasSystemFeature(PackageManager.FEATURE_VULKAN_HARDWARE_LEVEL)) {
             return "This device does not report the required Vulkan support.";

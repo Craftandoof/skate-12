@@ -1,0 +1,144 @@
+name: Build Android APK
+
+# Builds the Android APK from this fork. The build needs YOUR OWN legally
+# obtained Skate 3 files because the recompiler generates code from
+# default.xex and EAWebkit.xex. Nothing retail is stored in this repository.
+#
+# Provide the inputs in ONE of two ways:
+#   1. Self-hosted macOS ARM runner: set the repository variable
+#      SKATE3_INPUT_DIR to a folder that contains
+#        game/default.xex
+#        game/data/webkit/EAWebkit.xex
+#        TU_12K2276_000000C000000.00000000000O3
+#   2. Hosted runner: set the secret SKATE3_INPUTS_URL to a private https URL
+#      of a .tar.gz with that same layout, and optionally SKATE3_INPUTS_SHA256.
+#
+# The APK contains code generated from retail files. Keep this repository
+# private, or do not publish the artifact.
+#
+# Optional signing secrets (otherwise the APK is debug-signed, which is fine
+# for sideloading on your own phone):
+#   SKATE3_RELEASE_KEYSTORE_B64, SKATE3_RELEASE_STORE_PASSWORD,
+#   SKATE3_RELEASE_KEY_ALIAS, SKATE3_RELEASE_KEY_PASSWORD
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "Runner label (macos-14 = hosted Apple Silicon)"
+        default: "macos-14"
+        type: string
+      signed:
+        description: "Build a release-signed APK (needs the signing secrets)"
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-android-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NDK_VERSION: 27.2.12479018
+
+jobs:
+  build:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 240
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install build tools
+        run: |
+          brew install llvm cmake ninja
+          echo "/opt/homebrew/opt/llvm/bin" >> "$GITHUB_PATH"
+
+      - name: Install Android SDK components
+        run: |
+          : "${ANDROID_HOME:=${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}"
+          export ANDROID_HOME
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-35" "build-tools;35.0.0" "ndk;${NDK_VERSION}"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Fetch your game files
+        env:
+          INPUT_DIR: ${{ vars.SKATE3_INPUT_DIR }}
+          INPUTS_URL: ${{ secrets.SKATE3_INPUTS_URL }}
+          INPUTS_SHA256: ${{ secrets.SKATE3_INPUTS_SHA256 }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${INPUT_DIR:-}" && -d "$INPUT_DIR" ]]; then
+            echo "Using local inputs from the runner."
+            mkdir -p game
+            cp -R "$INPUT_DIR/game/." game/
+            cp "$INPUT_DIR"/TU_* .
+          elif [[ -n "${INPUTS_URL:-}" ]]; then
+            echo "::add-mask::$INPUTS_URL"
+            curl -fsSL --retry 3 -o "$RUNNER_TEMP/inputs.tar.gz" "$INPUTS_URL"
+            if [[ -n "${INPUTS_SHA256:-}" ]]; then
+              echo "${INPUTS_SHA256}  $RUNNER_TEMP/inputs.tar.gz" | shasum -a 256 -c -
+            fi
+            tar -xzf "$RUNNER_TEMP/inputs.tar.gz" -C .
+            rm -f "$RUNNER_TEMP/inputs.tar.gz"
+          else
+            echo "::error::No game files configured. Set the SKATE3_INPUT_DIR variable (self-hosted runner) or the SKATE3_INPUTS_URL secret. See the header of this workflow."
+            exit 1
+          fi
+          test -f game/default.xex
+          test -f game/data/webkit/EAWebkit.xex
+          ls TU_* >/dev/null
+
+      - name: Prepare signing key
+        if: ${{ inputs.signed }}
+        env:
+          KEYSTORE_B64: ${{ secrets.SKATE3_RELEASE_KEYSTORE_B64 }}
+        run: |
+          set -euo pipefail
+          [[ -n "$KEYSTORE_B64" ]] || { echo "::error::SKATE3_RELEASE_KEYSTORE_B64 is not set"; exit 1; }
+          echo "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          echo "SKATE3_RELEASE_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      - name: Build APK
+        env:
+          SKATE3_RELEASE_STORE_PASSWORD: ${{ secrets.SKATE3_RELEASE_STORE_PASSWORD }}
+          SKATE3_RELEASE_KEY_ALIAS: ${{ secrets.SKATE3_RELEASE_KEY_ALIAS }}
+          SKATE3_RELEASE_KEY_PASSWORD: ${{ secrets.SKATE3_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          args=(--game-dir "$PWD/game" --title-update "$(ls "$PWD"/TU_* | head -n1)")
+          if [[ "${{ inputs.signed }}" == "true" ]]; then args+=(--release); fi
+          ./build-android.sh "${args[@]}"
+
+      - name: Record checksum
+        run: |
+          cd out
+          shasum -a 256 Skate3-Mobile-Android*.apk | tee SHA256SUMS.txt
+
+      - name: Remove game files from the runner
+        if: ${{ always() }}
+        run: rm -rf game TU_* "$RUNNER_TEMP/release.jks" || true
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: skate3-mobile-android
+          path: |
+            out/Skate3-Mobile-Android*.apk
+            out/SHA256SUMS.txt
+          retention-days: 7
+          if-no-files-found: error

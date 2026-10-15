@@ -43,11 +43,11 @@ final class LauncherStrings {
         put("CHECKING FOR UPDATES...", "PROCURANDO ATUALIZAÇÕES...");
         put("APP UP TO DATE", "APLICATIVO ATUALIZADO");
         put("BUG REPORT / DEVICE DIAGNOSTICS", "RELATAR BUG / DIAGNÓSTICO DO DISPOSITIVO");
-        put("Requires Android 13+, ARM64, Vulkan, and about 8 GB free after the ISO is already on your device or USB drive. Touch controls are included.",
-            "Requer Android 13+, ARM64, Vulkan e cerca de 8 GB livres além da ISO no dispositivo ou unidade USB. Controles de toque estão incluídos.");
+        put("Requires Android 12+, ARM64, Vulkan, and about 8 GB free after the ISO is already on your device or USB drive. Touch controls are included.",
+            "Requer Android 12+, ARM64, Vulkan e cerca de 8 GB livres além da ISO no dispositivo ou unidade USB. Controles de toque estão incluídos.");
         put("DEVICE NOT SUPPORTED", "DISPOSITIVO NÃO COMPATÍVEL");
         put("This build requires a 64-bit ARM Android device.", "Esta versão requer um dispositivo Android ARM de 64 bits.");
-        put("This build requires Android 13 or newer.", "Esta versão requer Android 13 ou mais recente.");
+        put("This build requires Android 12 or newer.", "Esta versão requer Android 12 ou mais recente.");
         put("This device does not report the required Vulkan support.", "Este dispositivo não informa o suporte Vulkan necessário.");
         put("CLOSE", "FECHAR");
         put("READY TO SKATE", "PRONTO PARA ANDAR DE SKATE");
