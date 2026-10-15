@@ -19,6 +19,9 @@ concurrency:
 
 jobs:
   deploy:
+    # The project website is published only from the upstream repository. In a
+    # fork GitHub Pages is not enabled, so this job would always fail.
+    if: github.repository == 'Buku313/Skate3-Mobile'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
