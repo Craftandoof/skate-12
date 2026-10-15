@@ -1,0 +1,112 @@
+name: Android 12 APK (repack, no game files)
+
+# Builds an Android 12 compatible APK WITHOUT any game files.
+#
+# It downloads the public APK from the original author's release (checked
+# against a pinned SHA-256), changes only the Java side so it installs and
+# starts on Android 12, signs it and publishes the result as an artifact.
+# The native game code inside is the author's own build, unchanged.
+#
+# Runs by itself on every push to main or redmi9-android12, and can be started
+# by hand. Download the APK from the "Artifacts" section of the run.
+#
+# Optional signing secrets, so every build is signed with the SAME key and can
+# be installed over the previous one: SKATE3_RELEASE_KEYSTORE_B64,
+# SKATE3_RELEASE_STORE_PASSWORD, SKATE3_RELEASE_KEY_ALIAS,
+# SKATE3_RELEASE_KEY_PASSWORD. Without them a throwaway key is generated for
+# each run, so uninstall the old app before installing a newer build.
+
+on:
+  push:
+    branches: [main, redmi9-android12]
+    paths:
+      - "android/repack/**"
+      - ".github/workflows/repack-android12.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_APK_URL: https://github.com/Buku313/Skate3-Mobile/releases/download/v2.1.0/Skate3-Mobile-Android.apk
+  UPSTREAM_APK_SHA256: 1a558122d7f88d0ce04a1660b3cbb26bb3efc6a44ebe6b64e8f18bd225d6b772
+  APKTOOL_URL: https://github.com/iBotPeaches/Apktool/releases/download/v2.10.0/apktool_2.10.0.jar
+  APKTOOL_SHA256: c0350abbab5314248dfe2ee0c907def4edd14f6faef1f5d372d3d4abd28f0431
+
+jobs:
+  repack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Download upstream APK and apktool (pinned checksums)
+        run: |
+          set -euo pipefail
+          mkdir -p work
+          curl -fsSL --retry 3 -o work/upstream.apk "$UPSTREAM_APK_URL"
+          curl -fsSL --retry 3 -o work/apktool.jar "$APKTOOL_URL"
+          echo "$UPSTREAM_APK_SHA256  work/upstream.apk" | sha256sum -c -
+          echo "$APKTOOL_SHA256  work/apktool.jar" | sha256sum -c -
+
+      - name: Patch for Android 12
+        run: python3 android/repack/patch_upstream_apk.py work/apktool.jar work/upstream.apk work/patched-unsigned.apk
+
+      - name: Align and sign
+        env:
+          KEYSTORE_B64: ${{ secrets.SKATE3_RELEASE_KEYSTORE_B64 }}
+          STORE_PASS: ${{ secrets.SKATE3_RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.SKATE3_RELEASE_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.SKATE3_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          bt="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n1)"
+          echo "BUILD_TOOLS=$bt" >> "$GITHUB_ENV"
+          if [[ -n "${KEYSTORE_B64:-}" ]]; then
+            echo "$KEYSTORE_B64" | base64 --decode > work/signing.jks
+            ks_pass="$STORE_PASS"; alias="$KEY_ALIAS"; key_pass="$KEY_PASS"
+            echo "Signing with your keystore."
+          else
+            ks_pass=android; alias=skate3; key_pass=android
+            keytool -genkeypair -keystore work/signing.jks -alias "$alias" \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$ks_pass" -keypass "$key_pass" \
+              -dname "CN=Skate3 Android12 Repack"
+            echo "::notice::No signing secrets set: signed with a throwaway key. Uninstall the old app before installing a newer build."
+          fi
+          "$bt/zipalign" -p -f 4 work/patched-unsigned.apk work/aligned.apk
+          mkdir -p out
+          "$bt/apksigner" sign --ks work/signing.jks --ks-key-alias "$alias" \
+            --ks-pass "pass:$ks_pass" --key-pass "pass:$key_pass" \
+            --out out/Skate3-Mobile-Android12.apk work/aligned.apk
+          rm -f work/signing.jks
+
+      - name: Verify the result
+        run: |
+          set -euo pipefail
+          bt="$BUILD_TOOLS"
+          "$bt/apksigner" verify --verbose out/Skate3-Mobile-Android12.apk | head -5
+          "$bt/aapt2" dump badging out/Skate3-Mobile-Android12.apk | tee work/badging.txt | head -5
+          grep -q "sdkVersion:'31'" work/badging.txt
+          grep -q "targetSdkVersion:'35'" work/badging.txt
+          # The native code must be exactly the author's build.
+          mkdir -p work/a work/b
+          (cd work/a && unzip -q -o ../upstream.apk 'lib/*')
+          (cd work/b && unzip -q -o ../../out/Skate3-Mobile-Android12.apk 'lib/*')
+          diff -r work/a/lib work/b/lib
+          (cd out && sha256sum Skate3-Mobile-Android12.apk | tee SHA256SUMS.txt)
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: skate3-mobile-android12
+          path: |
+            out/Skate3-Mobile-Android12.apk
+            out/SHA256SUMS.txt
+          retention-days: 30
+          if-no-files-found: error

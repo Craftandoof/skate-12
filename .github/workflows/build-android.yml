@@ -52,6 +52,10 @@ env:
 
 jobs:
   build:
+    # Pushes only build from source when the repository variable
+    # SKATE3_BUILD_FROM_SOURCE is "true" (it needs your own game files).
+    # Starting it by hand always works.
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.SKATE3_BUILD_FROM_SOURCE == 'true' }}
     runs-on: ${{ inputs.runner || 'macos-14' }}
     timeout-minutes: 240
     steps:

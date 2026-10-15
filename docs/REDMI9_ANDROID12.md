@@ -113,13 +113,51 @@ O teste do upstream `tests/rp6/check-updates.py` continua passando.
 
 ## 3. Build
 
-O build **precisa dos seus arquivos do jogo**, porque o recompilador gera código
-a partir deles. O repositório não contém nada retail. Você fornece o ISO
-extraído e o Title Update 3.
+Há dois caminhos. O **A** não precisa de nenhum arquivo do jogo e é o que você
+quer para ter um APK rápido no Android 12. O **B** compila tudo do código-fonte
+e inclui o perfil Redmi 9 automático, mas exige arquivos do seu jogo.
 
-### Pelo GitHub Actions
+### Caminho A: reempacotar o APK do autor (sem arquivos do jogo)
 
-Workflow: `.github/workflows/build-android.yml` (disparo manual).
+Workflow: `.github/workflows/repack-android12.yml`. Roda sozinho a cada push em
+`main` ou `redmi9-android12` e também manualmente.
+
+O que ele faz: baixa o APK público do autor (release v2.1.0, com SHA-256 fixo),
+altera só o lado Java e assina. O código nativo é o do autor, sem mudança (o
+workflow confere que as bibliotecas são idênticas):
+
+- `minSdkVersion` 33 -> 31 no manifest;
+- as duas chamadas `registerReceiver(..., int)` do `HIDDeviceManager`, que só
+  existem na API 33, passam por um helper que escolhe a chamada certa pela
+  versão do Android. Em Android 13+ nada muda.
+
+O APK sai em **Actions > (execução) > Artifacts > skate3-mobile-android12**.
+Para poder instalar um build novo por cima do anterior, crie os secrets
+`SKATE3_RELEASE_KEYSTORE_B64`, `SKATE3_RELEASE_STORE_PASSWORD`,
+`SKATE3_RELEASE_KEY_ALIAS` e `SKATE3_RELEASE_KEY_PASSWORD`. Sem eles, cada
+execução usa uma chave nova e é preciso desinstalar o app antes.
+
+Limites do caminho A (importante):
+
+- **Não inclui o perfil Redmi 9 automático**, porque ele está no código C++.
+  Em aparelhos de 3 ou 4 GB o app já escolhe o perfil Performance sozinho. Em
+  um Redmi 9 de 6 GB ele escolhe o perfil de 720p: abra o jogo e vá em
+  **RB + Start > Video > Android Device Profile > RG406V / Performance >
+  Apply & Restart**. O limite de 30 FPS também precisa ser ajustado no menu.
+- Verificado: as bibliotecas nativas usam funções do Android só até a API 30, e
+  o patch do Java foi testado no APK real. **Não verificado:** que o jogo
+  inicie de fato num Android 12; isso só o seu aparelho responde.
+- É o APK do autor com alterações; o pacote continua `chat.buku.skate3`, mas
+  com outra assinatura. Não instala por cima de uma instalação do autor, e a
+  verificação de atualização dele não vai funcionar.
+
+### Caminho B: compilar do código-fonte (precisa dos arquivos do jogo)
+
+Workflow: `.github/workflows/build-android.yml`. O recompilador gera o código
+nativo a partir do `default.xex` e do `EAWebkit.xex` do seu jogo, mais o Title
+Update 3, então o build precisa deles. O repositório não contém nada retail.
+Em pushes ele só roda se a variável de repositório `SKATE3_BUILD_FROM_SOURCE`
+for `true`; manualmente sempre roda.
 
 1. Reúna, nesta estrutura:
 
@@ -139,13 +177,11 @@ Workflow: `.github/workflows/build-android.yml` (disparo manual).
 4. Baixe o artefato `skate3-mobile-android` (APK e `SHA256SUMS.txt`).
 
 Assinatura (opcional): sem ela o APK sai com chave de debug, o que basta para
-instalar no seu aparelho. Para assinar, marque `signed` e crie os secrets
-`SKATE3_RELEASE_KEYSTORE_B64` (keystore em base64),
-`SKATE3_RELEASE_STORE_PASSWORD`, `SKATE3_RELEASE_KEY_ALIAS` e
-`SKATE3_RELEASE_KEY_PASSWORD`.
+instalar no seu aparelho. Para assinar, marque `signed` e crie os mesmos
+secrets de keystore do caminho A.
 
-Importante: o APK contém código gerado a partir de arquivos retail. Mantenha o
-repositório privado ou não publique o artefato. O artefato expira em 7 dias.
+Importante: esse APK contém código gerado a partir de arquivos retail. Mantenha
+o repositório privado ou não publique o artefato. O artefato expira em 7 dias.
 
 Há também `.github/workflows/android-java-check.yml`, que **não usa arquivos do
 jogo**: roda o teste de política de atualização, compila o lado Java com
@@ -160,7 +196,9 @@ Como no upstream: `./build-android.sh --game-dir ... --title-update ...`. Veja
 ## 4. Instalação no Redmi 9
 
 1. Habilite instalar apps de fontes desconhecidas para o app que abrir o APK.
-2. Instale `Skate3-Mobile-Android-debug.apk`. O pacote é `chat.buku.skate3.dev`.
+2. Instale o APK baixado: `Skate3-Mobile-Android12.apk` (caminho A, pacote
+   `chat.buku.skate3`) ou `Skate3-Mobile-Android-debug.apk` (caminho B, pacote
+   `chat.buku.skate3.dev`).
 3. Abra o app, escolha **Select My Skate 3 ISO** e aponte para o seu ISO.
    Mantenha o app aberto durante os ~6 GiB de extração. Tenha ~8 GiB livres, e
    ~15 GiB se o ISO estiver no armazenamento interno.
