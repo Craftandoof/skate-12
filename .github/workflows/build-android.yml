@@ -22,6 +22,13 @@ name: Build Android APK
 #   SKATE3_RELEASE_KEY_ALIAS, SKATE3_RELEASE_KEY_PASSWORD
 
 on:
+  # Runs by itself on every push to main or the Redmi 9 branch (docs-only
+  # changes are skipped). It can also be started by hand.
+  push:
+    branches: [main, redmi9-android12]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
   workflow_dispatch:
     inputs:
       runner:
@@ -45,7 +52,7 @@ env:
 
 jobs:
   build:
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ inputs.runner || 'macos-14' }}
     timeout-minutes: 240
     steps:
       - name: Check out repository
@@ -96,6 +103,12 @@ jobs:
             tar -xzf "$RUNNER_TEMP/inputs.tar.gz" -C .
             rm -f "$RUNNER_TEMP/inputs.tar.gz"
           else
+            {
+              echo "### Build stopped: game files not configured"
+              echo
+              echo "The recompiler generates the native game code from **your** \`default.xex\` and \`EAWebkit.xex\` (plus Title Update 3) at build time."
+              echo "Set the \`SKATE3_INPUTS_URL\` secret or the \`SKATE3_INPUT_DIR\` variable. See docs/REDMI9_ANDROID12.md, section 3."
+            } >> "$GITHUB_STEP_SUMMARY"
             echo "::error::No game files configured. Set the SKATE3_INPUT_DIR variable (self-hosted runner) or the SKATE3_INPUTS_URL secret. See the header of this workflow."
             exit 1
           fi
@@ -104,7 +117,7 @@ jobs:
           ls TU_* >/dev/null
 
       - name: Prepare signing key
-        if: ${{ inputs.signed }}
+        if: ${{ inputs.signed == true }}
         env:
           KEYSTORE_B64: ${{ secrets.SKATE3_RELEASE_KEYSTORE_B64 }}
         run: |
