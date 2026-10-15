@@ -95,8 +95,8 @@ jobs:
           sed -n 1,8p work/verify.txt
           "$bt/aapt2" dump badging out/Skate3-Mobile-Android12.apk > work/badging.txt
           sed -n 1,5p work/badging.txt
-          grep -q "sdkVersion:'31'" work/badging.txt
-          grep -q "targetSdkVersion:'35'" work/badging.txt
+          grep -q "^minSdkVersion:'31'" work/badging.txt
+          grep -q "^targetSdkVersion:'35'" work/badging.txt
           # The native code must be exactly the author's build.
           mkdir -p work/a work/b
           (cd work/a && unzip -q -o ../upstream.apk 'lib/*')
