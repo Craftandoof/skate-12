@@ -81,7 +81,8 @@ jobs:
           fi
           "$bt/zipalign" -p -f 4 work/patched-unsigned.apk work/aligned.apk
           mkdir -p out
-          "$bt/apksigner" sign --ks work/signing.jks --ks-key-alias "$alias" \
+          "$bt/apksigner" sign --v2-signing-enabled true --v3-signing-enabled true \
+            --ks work/signing.jks --ks-key-alias "$alias" \
             --ks-pass "pass:$ks_pass" --key-pass "pass:$key_pass" \
             --out out/Skate3-Mobile-Android12.apk work/aligned.apk
           rm -f work/signing.jks
@@ -90,8 +91,10 @@ jobs:
         run: |
           set -euo pipefail
           bt="$BUILD_TOOLS"
-          "$bt/apksigner" verify --verbose out/Skate3-Mobile-Android12.apk | head -5
-          "$bt/aapt2" dump badging out/Skate3-Mobile-Android12.apk | tee work/badging.txt | head -5
+          "$bt/apksigner" verify --verbose out/Skate3-Mobile-Android12.apk > work/verify.txt
+          sed -n 1,8p work/verify.txt
+          "$bt/aapt2" dump badging out/Skate3-Mobile-Android12.apk > work/badging.txt
+          sed -n 1,5p work/badging.txt
           grep -q "sdkVersion:'31'" work/badging.txt
           grep -q "targetSdkVersion:'35'" work/badging.txt
           # The native code must be exactly the author's build.
